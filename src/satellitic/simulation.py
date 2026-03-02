@@ -217,7 +217,7 @@ if bUseJax :
         return r, v, a
 
 
-def accel_np(r, m, params):
+def accel_np(r, m, params, out=None ):
 
     G  = params["G"]
 
@@ -232,28 +232,73 @@ def accel_np(r, m, params):
     planet_R  = params["planet_R"]
     planet_MU = params["planet_MU"]
 
-    a = np.zeros_like(r)
+    if out is None :
+        a = np.zeros_like(r)
+    else :
+        out.fill(0.0)
+        a = out
 
-    # -------------------------
-    # Massive ↔ Massive
-    # -------------------------
-    rM = r[idx_massive]
-    mM = m[idx_massive]
+    if out is None :
+        # -------------------------
+        # Massive ↔ Massive
+        # -------------------------
+        rM = r[idx_massive]
+        mM = m[idx_massive]
 
-    dr = rM[:, None, :] - rM[None, :, :]
-    r2 = np.einsum('ijk,ijk->ij', dr, dr)
-    np.fill_diagonal(r2, np.inf)
+        dr = rM[:, None, :] - rM[None, :, :]
+        r2 = np.einsum('ijk,ijk->ij', dr, dr)
+        np.fill_diagonal(r2, np.inf)
 
-    inv_r = 1.0 / np.sqrt(r2)
-    inv_r3 = inv_r * inv_r * inv_r
+        inv_r = 1.0 / np.sqrt(r2)
+        inv_r3 = inv_r * inv_r * inv_r
 
-    aM = -G * np.einsum(
-        'ij,ijk,j->ik',
-        inv_r3,
-        dr,
-        mM
-    )
-    a[idx_massive] = aM
+        aM = -G * np.einsum(
+            'ij,ijk,j->ik',
+            inv_r3,
+            dr,
+            mM
+        )
+        a[idx_massive] = aM
+
+    else :
+        # ==========================================================
+        # Massive ↔ Massive (symmetric, cache-friendly loops)
+        # ==========================================================
+        rM = r[idx_massive]
+        mM = m[idx_massive]
+
+        NM = rM.shape[0]
+        aM = np.zeros_like(rM)
+
+        for i in range(NM - 1):
+            ri = rM[i]
+            mi = mM[i]
+
+            for j in range(i + 1, NM):
+                dr = rM[j] - ri
+                r2 = dr[0]*dr[0] + dr[1]*dr[1] + dr[2]*dr[2]
+
+                inv_r = 1.0 / np.sqrt(r2)
+                inv_r3 = inv_r * inv_r * inv_r
+
+                f = G * inv_r3
+
+                fx = dr[0] * f
+                fy = dr[1] * f
+                fz = dr[2] * f
+
+                mj = mM[j]
+
+                # Apply Newton's third law
+                aM[i,0] += mj * fx
+                aM[i,1] += mj * fy
+                aM[i,2] += mj * fz
+
+                aM[j,0] -= mi * fx
+                aM[j,1] -= mi * fy
+                aM[j,2] -= mi * fz
+
+        a[idx_massive] = aM
 
     # -------------------------
     # Light due to Massive
@@ -306,7 +351,8 @@ def accel_np(r, m, params):
         a[satellite_indices, 1] += ay
         a[satellite_indices, 2] += az
 
-    return a
+    if out is None :
+        return a
 
 
 def vverlet_np( r, v, a, m, params, dt ):
@@ -321,12 +367,59 @@ def multi_step_np(r, v, a, m, params, dt, steps_per_frame ):
     return r, v, a
 
 
+def simulate_small_np(r, v, m, dt,
+             steps_per_frame=10,
+             params=None):
+
+    if params is None:
+        raise ValueError("No parameters")
+
+    # Ensure contiguous memory
+    r = np.ascontiguousarray(r)
+    v = np.ascontiguousarray(v)
+    m = np.ascontiguousarray(m)
+
+    # Preallocate acceleration buffers
+    a     = np.zeros_like(r)
+    a_buf = np.zeros_like(r)
+
+    # Initial acceleration
+    accel_np(r, m, params, out=a)
+
+    step_count = 0
+
+    while True:
+        multi_step_inplace(
+            r, v, a, m, params,
+            dt, steps_per_frame, a_buf
+        )
+
+        step_count += steps_per_frame
+        yield r, step_count
+
+
+def vverlet_inplace(r, v, a, m, params, dt, a_buf):
+    r += v * dt
+    r += 0.5 * a * dt * dt
+    # compute new acceleration into buffer
+    accel_np(r, m, params, out=a_buf)
+    v += 0.5 * (a + a_buf) * dt
+    # swap acceleration buffers
+    a[:] = a_buf
+
+
+def multi_step_inplace(r, v, a, m, params, dt, steps_per_frame, a_buf):
+    for _ in range(steps_per_frame):
+        vverlet_inplace(r, v, a, m, params, dt, a_buf)
+
+
 def simulate( r, v, m, dt, Nsteps=None, steps_per_frame=10, params=None , bUseJax=bUseJax ):
 
     if params is None :
         print('Error: No runsystem or jaxed parameters')
         exit(1)
 
+    bSkipRest = False
     if bUseJax:
         import jax.numpy as xp
         accel_fn      = accel
@@ -339,14 +432,42 @@ def simulate( r, v, m, dt, Nsteps=None, steps_per_frame=10, params=None , bUseJa
         v = np.ascontiguousarray(v)
         m = np.ascontiguousarray(m)
 
-    step_count = 0
-    a = accel_fn( r, m, params )
+        if params['Number of Massive'] < 40 :
+            # We dont have JAX and we are small so
+            # we are not trying to be vectorized
+            # small system handling
+            # Preallocate acceleration buffers
+            a     = np.zeros_like(r)
+            a_buf = np.zeros_like(r)
+            multi_step_fn = multi_step_inplace
 
-    while True :
-        r, v, a = multi_step_fn(r, v, a, m, params, dt,
-            steps_per_frame = steps_per_frame )
-        step_count += steps_per_frame
-        yield r,step_count
+            bSkipRest = True
+
+            # Initial acceleration
+            accel_np(r, m, params, out=a)
+
+            step_count = 0
+
+            while True:
+                multi_step_inplace(
+                    r, v, a, m, params,
+                    dt, steps_per_frame, a_buf
+                )
+
+                step_count += steps_per_frame
+                yield r, step_count
+
+    if not bSkipRest :
+        # We either have JAX or we are large enough
+        # to be vectorized
+        step_count = 0
+        a = accel_fn( r, m, params )
+
+        while True :
+            r, v, a = multi_step_fn(r, v, a, m, params, dt,
+                steps_per_frame = steps_per_frame )
+            step_count += steps_per_frame
+            yield r,step_count
 
 
 def newtonian_simulator( \
