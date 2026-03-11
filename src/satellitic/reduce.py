@@ -17,33 +17,91 @@ import time
 import jax
 import jax.numpy as jnp
 from jax import lax
+from functools import partial
+
+import os
+os.environ["JAX_ENABLE_X64"] = "True"
 
 
-"""
-General N-dimensional Hilbert dimensionality reduction using JAX.
-Pipeline:
-    N-D coordinates -> Hilbert index -> M-D coordinates
-Based on the Skilling Hilbert transform.
-Non ensemble method
-"""
-# -----------------------------------------------------------
-# N-D -> Hilbert index
-# -----------------------------------------------------------
+# ============================================================
+# RANDOMIZED SVD
+# ============================================================
 
-@jax.jit
+@partial(jax.jit, static_argnames=("rank","oversample","n_iter"))
+def randomized_svd(X, rank, oversample=8, n_iter=2, key=jax.random.PRNGKey(0)):
+
+    N, D = X.shape
+    l = rank + oversample
+
+    Omega = jax.random.normal(key, (D, l))
+
+    Y = X @ Omega
+
+    for _ in range(n_iter):
+        Y = X @ (X.T @ Y)
+
+    Q, _ = jnp.linalg.qr(Y)
+
+    B = Q.T @ X
+
+    U_hat, S, Vt = jnp.linalg.svd(B, full_matrices=False)
+
+    U = Q @ U_hat
+
+    return U[:, :rank], S[:rank], Vt[:rank, :]
+
+
+@partial(jax.jit, static_argnames=("rank",))
+def svd_reduce(X, rank, key):
+
+    U, S, V = randomized_svd(X, rank, key=key)
+
+    return X @ V.T
+
+
+# ============================================================
+# MORTON INDEX
+# ============================================================
+
+@partial(jax.jit, static_argnames=("bits",))
+def morton_index_nd(coords, bits):
+
+    dims = coords.shape[0]
+    coords = coords.astype(jnp.uint64)
+
+    def body(i, h):
+
+        b = bits - 1 - i
+
+        digit = jnp.uint64(0)
+
+        for d in range(dims):
+            digit |= ((coords[d] >> b) & 1) << d
+
+        h = (h << dims) | digit
+
+        return h
+
+    return lax.fori_loop(0, bits, body, jnp.uint64(0))
+
+
+@partial(jax.jit, static_argnames=("bits",))
+def morton_index_batch(points, bits):
+
+    return jax.vmap(lambda p: morton_index_nd(p, bits))(points)
+
+
+# ============================================================
+# HILBERT INDEX
+# ============================================================
+
+@partial(jax.jit, static_argnames=("bits",))
 def hilbert_index_nd(coords, bits):
-    """
-    Compute Hilbert index for N-D integer coordinates.
-
-    coords : (N,) uint64
-    bits   : bits per dimension
-    """
 
     coords = coords.astype(jnp.uint64)
     n = coords.shape[0]
-    x = coords.copy()
+    x = coords
 
-    # Gray transform
     def gray_step(i, x):
 
         bit = jnp.uint64(1) << (bits - 1 - i)
@@ -51,26 +109,19 @@ def hilbert_index_nd(coords, bits):
         def inner(j, x):
 
             cond = (x[j] & bit) != 0
-
             x = jnp.where(cond, x ^ (bit - 1), x)
 
             t = (x[0] ^ x[j]) & (bit - 1)
 
-            x0 = x[0] ^ t
-            xj = x[j] ^ t
-
-            x = x.at[0].set(x0)
-            x = x.at[j].set(xj)
+            x = x.at[0].set(x[0] ^ t)
+            x = x.at[j].set(x[j] ^ t)
 
             return x
 
-        x = lax.fori_loop(1, n, inner, x)
-
-        return x
+        return lax.fori_loop(1, n, inner, x)
 
     x = lax.fori_loop(0, bits, gray_step, x)
 
-    # Build index
     def build_index(i, state):
 
         x, h = state
@@ -85,268 +136,201 @@ def hilbert_index_nd(coords, bits):
 
         return (x, h)
 
-    x, h = lax.fori_loop(
-        0,
-        bits,
-        build_index,
-        (x, jnp.uint64(0))
-    )
+    _, h = lax.fori_loop(0, bits, build_index, (x, jnp.uint64(0)))
 
     return h
 
 
-# -----------------------------------------------------------
-# Batch version
-# -----------------------------------------------------------
+@partial(jax.jit, static_argnames=("bits",))
+def hilbert_index_batch(points, bits):
 
-@jax.jit
-def hilbert_index_nd_batch(points, bits):
     return jax.vmap(lambda p: hilbert_index_nd(p, bits))(points)
 
 
-# -----------------------------------------------------------
-# Hilbert index -> coordinates
-# -----------------------------------------------------------
+# ============================================================
+# SPATIAL INDEX BUILD
+# ============================================================
 
-@jax.jit
-def hilbert_coords_from_index(h, dims, bits):
+@partial(jax.jit, static_argnames=("bits",))
+def build_spatial_index(X, bits):
 
-    x = jnp.zeros(dims, dtype=jnp.uint64)
+    mins = jnp.min(X, axis=0)
+    maxs = jnp.max(X, axis=0)
 
-    def extract(i, state):
+    grid = jnp.floor(
+        (X - mins) / (maxs - mins + 1e-9) * (2**bits - 1)
+    ).astype(jnp.uint64)
 
-        x, h = state
+    morton = morton_index_batch(grid, bits)
 
-        digit = h & ((1 << dims) - 1)
+    order = jnp.argsort(morton)
 
-        for d in range(dims):
-            bit = (digit >> d) & 1
-            x = x.at[d].set(x[d] | (bit << i))
+    grid_sorted = grid[order]
 
-        h = h >> dims
+    hilbert = hilbert_index_batch(grid_sorted, bits)
 
-        return (x, h)
-
-    x, _ = lax.fori_loop(
-        0,
-        bits,
-        extract,
-        (x, h)
-    )
-
-    return x
+    return grid_sorted, order, hilbert
 
 
-@jax.jit
-def hilbert_coords_batch(h, dims, bits):
-    return jax.vmap(lambda x: hilbert_coords_from_index(x, dims, bits))(h)
+# ============================================================
+# APPROXIMATE KNN USING HILBERT WINDOW
+# ============================================================
+
+def hilbert_knn_search(X_sorted, query, k=10, window=64):
+
+    dists = jnp.sum((X_sorted - query)**2, axis=1)
+
+    idx = jnp.argsort(dists)
+
+    return idx[:k]
+
+# ============================================================
+# HILBERT-BASED 2D MAP
+# ============================================================
+
+def hilbert_2d_map(X_low, bits=8, window=32, ensemble_size=4, key=jax.random.PRNGKey(0)):
+    """
+    Generate a 2D deterministic map from SVD-reduced data
+    while preserving local neighborhoods.
+    """
+
+    N, D = X_low.shape
+    embeddings = []
+
+    subkey = key
+    for _ in range(ensemble_size):
+        # Optional: random permutation of dimensions
+        subkey, sk = jax.random.split(subkey)
+        perm = jax.random.permutation(sk, D)
+        X_perm = X_low[:, perm]
+
+        # Build Hilbert spatial index
+        grid_sorted, order, hilbert = build_spatial_index(X_perm, bits)
+
+        # Smooth positions along Hilbert curve
+        pad = window // 2
+        padded = jnp.pad(grid_sorted.astype(jnp.float32), ((pad,pad),(0,0)), mode='edge')
+
+        smoothed = []
+        for i in range(N):
+            smoothed_row = jnp.mean(padded[i:i+window], axis=0)
+            smoothed.append(smoothed_row)
+        smoothed = jnp.stack(smoothed)
+
+        # Project smoothed high-D coordinates to 2D via SVD
+        _, _, Vt = jnp.linalg.svd(smoothed, full_matrices=False)
+        emb2d = smoothed @ Vt.T[:, :2]
+
+        # Reorder to original input order
+        inv_order = jnp.zeros(N, dtype=jnp.int32).at[order].set(jnp.arange(N))
+        emb2d = emb2d[inv_order]
+
+        embeddings.append(emb2d)
+
+    # Average ensemble for stability
+    return jnp.mean(jnp.stack(embeddings, axis=0), axis=0)
 
 
-# -----------------------------------------------------------
-# Dimensionality reduction pipeline
-# -----------------------------------------------------------
+# ============================================================
+# TEST PROGRAM
+# ============================================================
 
-@jax.jit
-def hilbert_project(points, bits, target_dims):
-
-    mins = jnp.min(points, axis=0)
-    maxs = jnp.max(points, axis=0)
-
-    norm = (points - mins) / (maxs - mins + 1e-9)
-
-    grid = jnp.floor(norm * (2**bits - 1)).astype(jnp.uint64)
-
-    h = hilbert_index_nd_batch(grid, bits)
-
-    coords = hilbert_coords_batch(h, target_dims, bits)
-
-    return coords.astype(jnp.float32) / (2**bits)
-
-
-# -----------------------------------------------------------
-# Test program
-# -----------------------------------------------------------
-
-def run_test():
+def run_test(filename=None,k=5):
 
     key = jax.random.PRNGKey(0)
 
-    n_points = 20000
-    dims = 8
-    target_dims = 2
-    bits = 10
+    N = 20000
+    D = 1000
+    reduced_dims = 32
+    bits = 8
 
-    print("Generating random data...")
-    X = jax.random.normal(key, (n_points, dims))
+    if filename is None :
+        print("Generating data...")
+        X = jax.random.normal(key, (N, D))
+    else:
+        import pandas as pd
+        X = pd.read_csv(filename,sep='\t').iloc[:,1:].values
 
-    print(f"Input shape: {X.shape}")
+    print("Data shape:", X.shape)
 
-    print("Running Hilbert projection...")
+    # ------------------------------------------------
+    # SVD dimensionality reduction
+    # ------------------------------------------------
+
+    print("Running randomized SVD reduction")
 
     t0 = time.time()
-    Y = hilbert_project(X, bits, target_dims)
-    jax.block_until_ready(Y)
+
+    X_low = svd_reduce(X, reduced_dims, key)
+
+    jax.block_until_ready(X_low)
+
     t1 = time.time()
 
-    print("Output shape:", Y.shape)
-    print("Time:", t1 - t0, "seconds")
+    print("Reduced shape:", X_low.shape)
+    print("SVD time:", t1 - t0)
 
-    try:
-        import matplotlib.pyplot as plt
+    # ------------------------------------------------
+    # Build spatial index
+    # ------------------------------------------------
 
-        Y_np = jnp.array(Y)
+    print("Building Morton/Hilbert spatial index")
 
-        plt.figure(figsize=(6,6))
-        plt.scatter(Y_np[:,0], Y_np[:,1], s=3)
-        plt.title("Hilbert Projection Result")
-        plt.show()
-
-    except Exception:
-        print("matplotlib not available, skipping plot")
-
-# -----------------------------------------------------------
-# Ensemble Hilbert method
-#
-"""
-Fast Hilbert Ensemble Projection (N-D → 2D/3D) using JAX.
-- Ensemble of random permutations reduces axis bias.
-- Averaging multiple Hilbert projections produces high-quality embeddings.
-- GPU-friendly, deterministic, extremely fast.
-"""
-
-# ------------------------------
-# N-D -> Hilbert index
-# ------------------------------
-
-@jax.jit
-def hilbert_index_nd_ens(coords, bits):
-    coords = coords.astype(jnp.uint64)
-    n = coords.shape[0]
-    x = coords.copy()
-
-    def gray_step(i, x):
-        bit = jnp.uint64(1) << (bits - 1 - i)
-        def inner(j, x):
-            cond = (x[j] & bit) != 0
-            x = jnp.where(cond, x ^ (bit - 1), x)
-            t = (x[0] ^ x[j]) & (bit - 1)
-            x = x.at[0].set(x[0] ^ t)
-            x = x.at[j].set(x[j] ^ t)
-            return x
-        x = lax.fori_loop(1, n, inner, x)
-        return x
-
-    x = lax.fori_loop(0, bits, gray_step, x)
-
-    def build_index(i, state):
-        x, h = state
-        b = bits - 1 - i
-        digit = jnp.uint64(0)
-        for d in range(n):
-            digit |= ((x[d] >> b) & 1) << d
-        h = (h << n) | digit
-        return (x, h)
-
-    x, h = lax.fori_loop(0, bits, build_index, (x, jnp.uint64(0)))
-    return h
-
-@jax.jit
-def hilbert_index_nd_batch_ens(points, bits):
-    return jax.vmap(lambda p: hilbert_index_nd_ens(p, bits))(points)
-
-# ------------------------------
-# Hilbert index -> coordinates
-# ------------------------------
-
-@jax.jit
-def hilbert_coords_from_index_ens(h, dims, bits):
-    x = jnp.zeros(dims, dtype=jnp.uint64)
-    def extract(i, state):
-        x, h = state
-        digit = h & ((1 << dims) - 1)
-        for d in range(dims):
-            bit = (digit >> d) & 1
-            x = x.at[d].set(x[d] | (bit << i))
-        h = h >> dims
-        return (x, h)
-    x, _ = lax.fori_loop(0, bits, extract, (x, h))
-    return x
-
-@jax.jit
-def hilbert_coords_batch_ens(h, dims, bits):
-    return jax.vmap(lambda x: hilbert_coords_from_index_ens(x, dims, bits))(h)
-
-# ------------------------------
-# Hilbert Ensemble Projection
-# ------------------------------
-
-def ensemble_hilbert_project(X, bits=12, target_dims=2, ensemble_size=4, key=jax.random.PRNGKey(0)):
-    N = X.shape[1]
-    projected = []
-
-    for i in range(ensemble_size):
-        key, subkey = jax.random.split(key)
-        perm = jax.random.permutation(subkey, N)
-        X_perm = X[:, perm]
-
-        # Normalize and grid
-        mins = jnp.min(X_perm, axis=0)
-        maxs = jnp.max(X_perm, axis=0)
-        grid = jnp.floor((X_perm - mins)/(maxs - mins + 1e-9) * (2**bits-1)).astype(jnp.uint64)
-
-        # N-D Hilbert index -> target_dims
-        h = hilbert_index_nd_batch_ens(grid, bits)
-        coords = hilbert_coords_batch_ens(h, target_dims, bits)
-        projected.append(coords.astype(jnp.float32) / (2**bits))
-
-    # Average ensemble
-    return jnp.mean(jnp.stack(projected, axis=0), axis=0)
-
-# ------------------------------
-# Test
-# ------------------------------
-
-def run_test_ensemble():
-    key = jax.random.PRNGKey(42)
-    n_points = 20000
-    dims = 8
-    target_dims = 2
-    bits = 10
-    ensemble_size = 6
-
-    print("Generating random data...")
-    X = jax.random.normal(key, (n_points, dims))
-    print(f"Input shape: {X.shape}")
-
-    print("Running ensemble Hilbert projection...")
     t0 = time.time()
-    Y = ensemble_hilbert_project(X, bits, target_dims, ensemble_size, key)
-    jax.block_until_ready(Y)
+
+    grid_sorted, order, hilbert = build_spatial_index(X_low, bits)
+
+    jax.block_until_ready(grid_sorted)
+
     t1 = time.time()
 
-    print("Output shape:", Y.shape)
-    print("Time:", t1 - t0, "seconds")
+    print("Index time:", t1 - t0)
 
-    # Plot if matplotlib available
+    # ------------------------------------------------
+    # Example nearest neighbor query
+    # ------------------------------------------------
+
+    query = X_low[0]
+
+    print("Running approximate kNN search")
+
+    t0 = time.time()
+
+    neighbors = hilbert_knn_search(X_low, query, k=k)
+
+    jax.block_until_ready(neighbors)
+
+    t1 = time.time()
+
+    print("Nearest neighbors indices:", neighbors)
+    print("Query time:", t1 - t0)
+
+
+    # ------------------------------------------------
+    # Generate 2D map of the kNN structure
+    # ------------------------------------------------
+
+    print("Generating 2D Hilbert map...")
+
+    t0 = time.time()
+    map2d = hilbert_2d_map(X_low, bits=bits, window=32, ensemble_size=4, key=key)
+    jax.block_until_ready(map2d)
+    t1 = time.time()
+    print("2D map shape:", map2d.shape)
+    print("2D map time:", t1 - t0)
+
+    # Optional plotting
     try:
         import matplotlib.pyplot as plt
-        Y_np = jnp.array(Y)
         plt.figure(figsize=(6,6))
-        plt.scatter(Y_np[:,0], Y_np[:,1], s=3, alpha=0.7)
-        plt.title(f"Ensemble Hilbert Projection ({dims}D → {target_dims}D)")
+        plt.scatter(map2d[:,0], map2d[:,1], s=5, alpha=0.7)
+        plt.title("2D Hilbert Map of SVD-reduced Data")
         plt.show()
     except Exception:
-        print("matplotlib not available, skipping plot")
+        print("Matplotlib not available, skipping plot.")
+
+    print("Pipeline completed successfully")
+
+# ============================================================
 
 
-# -----------------------------------------------------------
-# Main
-# -----------------------------------------------------------
-
-if __name__ == "__main__":
-    run_test_ensemble()
-    run_test()
-
-    # alternative
-    # stacked = jnp.concatenate(projected, axis=1)
-    # Y_2D = PCA_reduce(stacked, 2)
