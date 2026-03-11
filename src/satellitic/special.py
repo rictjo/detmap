@@ -13,6 +13,7 @@ lic_ = """
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+bUseJax = False
 try :
         import jax
         jax.config.update("jax_enable_x64", True)
@@ -39,7 +40,7 @@ def strings_find(a, sub, start=0, end=None):
         results.append(idx)
     return np.array(results)
 
-if bUseJax:
+if bUseJax :
    @jax.jit
     def _split_by_3bits(x):
         x &= 0x1fffff
