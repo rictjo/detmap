@@ -234,6 +234,17 @@ systems_5Cs142dE_20241108 = {'A':[[525,28,120,53,0],
            'M':[[*a,0] for a in zip( [340, 345, 350, 360, 525, 530, 535, 604, 614], [12, 18, 48, 48, 48, 30, 28, 28, 28] , [110, 110, 110, 120, 120, 120, 120, 12, 18] , [53, 46, 38, 97, 53, 43, 33, 148, 116] ) ]
 }
 
+
+cept_systems = {'Mars E-1 Config 1' : [	[	535,	28,	120,	33,	0. ] , # 29988 satellites
+			[	530,	28,	120,	43,		0 ] ,
+			[	525,	28,	120,	53,		0 ] ,
+			[	360,	30,	120,	96.9,	0 ] ,
+			[	350,	48,	110,	38,		0 ] ,
+			[	345,	48,	110,	46,		0 ] ,
+			[	340,	48,	110,	53,		0 ] ,
+			[	604,	12,	12,	148,		0 ] ,
+			[	614,	18,	18,	115.7,		0 ] ] }
+
 if __name__ == '__main__' :
     # Example one : To write TLE definitions, using default paramaters and a selection. 
 	# Note that the required parameters systems_information and system_names are set to
