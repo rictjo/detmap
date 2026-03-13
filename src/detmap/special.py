@@ -22,7 +22,7 @@ except ImportError :
 except OSError:
         bUseJax = False
 
-
+import jax.numpy as jnp
 import numpy as np
 def strings_find(a, sub, start=0, end=None):
     """
@@ -193,6 +193,74 @@ else :
         unique, start = np.unique(codes_sorted, return_index=True)
         end = np.concatenate([start[1:], jnp.array([codes_sorted.shape[0]])])
         return order, codes_sorted, unique, start, end
+
+def rankdata_jax(a, method='average'):
+    """
+    Rank the data, similar to scipy.stats.rankdata.
+
+    Args:
+        a: 1D array-like
+        method: how to handle ties; only 'average' is implemented
+
+    Returns:
+        ranks: 1D array of ranks (float), starting at 1
+    """
+    a = jnp.array(a)
+    sort_idx = jnp.argsort(a)
+    sorted_a = a[sort_idx]
+    
+    # Compute ranks
+    ranks = jnp.arange(1, len(a)+1, dtype=jnp.float32)
+    
+    if method == 'average':
+        # Handle ties by averaging their ranks
+        diff = jnp.diff(sorted_a, prepend=sorted_a[0]-1)
+        tie_groups = jnp.cumsum(diff != 0)  # group ID for each tie
+        # Compute sum of ranks per group
+        group_sum = jnp.zeros(tie_groups.max()+1)
+        group_count = jnp.zeros(tie_groups.max()+1)
+        group_sum = group_sum.at[tie_groups].add(ranks)
+        group_count = group_count.at[tie_groups].add(1)
+        avg_ranks = group_sum / group_count
+        ranks = avg_ranks[tie_groups]
+    
+    else:
+        raise NotImplementedError(f"Only method='average' is implemented, got {method}")
+    
+    # Undo sorting to original order
+    inv_sort_idx = jnp.argsort(sort_idx)
+    return ranks[inv_sort_idx]
+  
+
+def local_pca_jax(df, ndims=None, random_key=jax.random.PRNGKey(42)):
+    """
+    Local PCA wrapper using JAX randomized PCA.
+
+    Args:
+        df: pandas DataFrame (n_samples x n_features)
+        ndims: number of components to keep (default: all)
+        random_key: JAX random key for reproducibility
+
+    Returns:
+        scores: projected data (n_samples x ndims)
+        weights: principal components (n_features x ndims)
+        row_index: original df index
+        col_names: original df columns
+    """
+    X = jnp.array(df.values)
+    n_components = ndims if ndims is not None else min(X.shape)
+    
+    # Run randomized PCA
+    X_pca, components, _ = randomized_pca_jax(X, n_components=n_components, random_key=random_key)
+
+    # Note: sklearn returns components as (n_components x n_features),
+    # but your wrapper expects weights as (n_features x n_components)
+    weights = jnp.array(components).T
+
+    # Return as tuple matching the original local_pca
+    return X_pca, weights, df.index, df.columns
+
+
 
 
 if __name__ == '__main__':
