@@ -3,12 +3,12 @@ requires = [ "hatchling >= 1.26" ]
 build-backend = "hatchling.build"
 
 [project]
-name = "satellitic"
+name = "detmap"
 version = "0.1.23"
 authors = [
   { name="Richard Tjörnhammar", email="richard.tjornhammar@gmail.com" },
 ]
-description = "A collection of satellite methods and approaches to satellite simulations"
+description = "a deterministic, multi-scale, ensemble manifold embedding with high-dimensional support and near-linear scaling"
 readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
@@ -22,14 +22,10 @@ license-files = ["LICEN[CS]E*"]
 dependencies = [
   "numpy>=1.26.4",
   "pandas>=2.3.1",
-  "sgp4>=2.21",
-  "astropy>=5.1",
-  "vispy>=0.13",
-  "matplotlib>=3.7.2",
   "requests>=2.31",
-  "pyqt5>=5.15",
+  "jax>=0.6.0"
 ]
 
 [project.urls]
-Homepage = "https://github.com/richardtjornhammar/satellitic"
-Issues = "https://github.com/richardtjornhammar/satellitic"
+Homepage = "https://github.com/richardtjornhammar/detmap"
+Issues = "https://github.com/richardtjornhammar/detmap"
