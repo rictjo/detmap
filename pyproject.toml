@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "detmap"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
   { name="Richard Tjörnhammar", email="richard.tjornhammar@gmail.com" },
 ]
