@@ -235,5 +235,24 @@ def run_csv_test(filename=None):
     except Exception:
         print("Matplotlib not available, skipping plot.")
 
+
+"""DMap implementation."""
+from ..base import BaseMap
+
+class DMap(BaseMap):
+    """Diffusion Map implementation."""
+    
+    def __init__(self, n_components=2, alpha=1.0, random_state=None):
+        super().__init__(n_components, random_state)
+        self.alpha = alpha
+        
+    def fit(self, X, y=None):
+        # Your DMap implementation
+        return self
+    
+    def transform(self, X):
+        # Transform implementation
+        pass
+
 if __name__ == "__main__":
     run_test()
