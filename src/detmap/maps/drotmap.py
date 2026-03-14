@@ -409,7 +409,7 @@ from ..base import BaseMap
 import numpy as np
 
 class DetMap(BaseMap):
-   """
+    """
     Deterministic Rotation Map.
     
     This is the main embedding algorithm for detmap.
