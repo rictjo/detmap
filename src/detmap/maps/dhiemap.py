@@ -245,11 +245,11 @@ import numpy as np
 class DhieMap(BaseMap):
    """Deterministic Hierarchical Map implementation."""
     
-    def __init__(self, n_components=2, proj_dim=64, level=7, 
+    def __init__(self, n_components=2, reduced_dims=64, hierarchy_depth=7, 
                  window=32, ensemble_size=4, random_state=None):
         super().__init__(n_components, random_state)
-        self.reduced_dims = reduced_dims
-        self.bits = bits
+        self.proj_dim = reduced_dims
+        self.levels = hierarchy_depth
         self.window = window
         self.ensemble_size = ensemble_size
         self.X_fit_ = None
@@ -265,10 +265,11 @@ class DhieMap(BaseMap):
         This version doesn't use stored mins/maxs, recalculates everything.
         """
         X = self._check_array(X)
-                
+        self.proj_dim = np.min([*X.shape,self.proj_dim])
+       
         X_embedded = ensemble_embedding(
             X=jnp.array(X),
-            proj_dim=self.reduced_dims,
+            proj_dim=self.proj_dim,
             levels=self.levels,
             ensemble=self.ensemble_size,
         )
