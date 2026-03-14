@@ -75,11 +75,6 @@ def multivariate_aligned_pca_legacy ( analytes_df , journal_df ,
 def multivariate_aligned_pca(analytes_df, journal_df=None,
                              sample_label='Sample ID', align_to='Modulating group',
                              n_components=None, add_labels=None,
-                             e2s=None, color_lookup=None, ispec=None):
-
-def multivariate_aligned_pca(analytes_df, journal_df=None,
-                             sample_label='Sample ID', align_to='Modulating group',
-                             n_components=None, add_labels=None,
                              e2s=None, color_lookup=None, ispec=None):    
     """
     Perform multivariate aligned PCA with improved efficiency.
