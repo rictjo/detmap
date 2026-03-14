@@ -403,6 +403,34 @@ def run_data_test(filename=None,df=None):
 
 # -------------------------------------------------------
 
+"""DROT Map implementation."""
+
+from ..base import BaseMap
+import numpy as np
+
+class DetMap(BaseMap):
+    """
+    Deterministic Rotation Map.
+    
+    This is the main embedding algorithm for detmap.
+    """
+    
+    def __init__(self, n_components=2, ensemble_size=10, random_state=None):
+        super().__init__(n_components, random_state)
+        self.ensemble_size = ensemble_size
+        
+    def fit(self, X, y=None):
+        X = self._check_array(X)
+        # Your DROT map implementation here
+        # Can use from ..quantification import multivariate_aligned_pca
+        return self
+    
+    def transform(self, X):
+        X = self._check_array(X)
+        # Transform implementation
+        pass
+
+
 if __name__ == "__main__":
     import pandas as pd
     df = pd.read_csv("analytes.csv",sep='\t').iloc[:,1:]
