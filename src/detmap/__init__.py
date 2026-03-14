@@ -8,7 +8,7 @@ import warnings
 _MAP_REGISTRY = {
     'DetMap': 'drotmap',      # Default to drotmap for backward compatibility
     'DMap': 'dmap',
-    'DMap': 'dmap',           # Allow case-insensitive variations
+    'Dmap': 'dmap',           # Allow case-insensitive variations
     'DrotMap': 'drotmap',
     'Drotmap': 'drotmap',
     'DROTMap': 'drotmap',
@@ -22,7 +22,7 @@ def __getattr__(name):
     Dynamically load map classes when requested.
     
     This allows users to do:
-    from detmap import DetMap, DMap, Dhiemap
+    from detmap import DetMap, DMap, DhieMap
     
     Without loading all modules at import time.
     """
