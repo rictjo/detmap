@@ -243,7 +243,7 @@ from ..base import BaseMap
 import numpy as np
 
 class DhieMap(BaseMap):
-   """Deterministic Hierarchical Map implementation."""
+    """Deterministic Hierarchical Map implementation."""
     
     def __init__(self, n_components=None, reduced_dims=64, hierarchy_depth=7, 
                  window=32, ensemble_size=4, random_state=None):
