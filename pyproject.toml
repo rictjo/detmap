@@ -1,17 +1,19 @@
 [build-system]
-requires = [ "hatchling >= 1.26" ]
+requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 [project]
 name = "detmap"
-version = "0.1.1"
+version = "0.1.2"
 authors = [
-  { name="Richard Tjörnhammar", email="richard.tjornhammar@gmail.com" },
+    { name="Richard Tjörnhammar", email="richard.tjornhammar@gmail.com" },
 ]
 description = "a deterministic, multi-scale, ensemble manifold embedding with high-dimensional support and near-linear scaling"
 readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
@@ -20,12 +22,18 @@ license = "Apache-2.0"
 license-files = ["LICEN[CS]E*"]
 
 dependencies = [
-  "numpy>=1.26.4",
-  "pandas>=2.3.1",
-  "requests>=2.31",
-  "jax>=0.6.0"
+    "numpy>=1.26.4",
+    "pandas>=2.3.1",
+    "requests>=2.31",
+    "jax>=0.6.0"
 ]
 
 [project.urls]
 Homepage = "https://github.com/richardtjornhammar/detmap"
-Issues = "https://github.com/richardtjornhammar/detmap"
+Issues = "https://github.com/richardtjornhammar/detmap/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/detmap"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src"]
