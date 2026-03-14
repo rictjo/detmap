@@ -241,7 +241,7 @@ from ..base import BaseMap
 import numpy as np
 
 class DMap(BaseMap):
-   """Diffusion Map implementation."""
+    """Diffusion Map implementation."""
     
     def __init__(self, n_components=None, reduced_dims=64, bits=8, 
                  window=32, ensemble_size=4, random_state=None):
