@@ -76,6 +76,11 @@ def multivariate_aligned_pca(analytes_df, journal_df=None,
                              sample_label='Sample ID', align_to='Modulating group',
                              n_components=None, add_labels=None,
                              e2s=None, color_lookup=None, ispec=None):
+
+def multivariate_aligned_pca(analytes_df, journal_df=None,
+                             sample_label='Sample ID', align_to='Modulating group',
+                             n_components=None, add_labels=None,
+                             e2s=None, color_lookup=None, ispec=None):    
     """
     Perform multivariate aligned PCA with improved efficiency.
     
@@ -103,10 +108,14 @@ def multivariate_aligned_pca(analytes_df, journal_df=None,
     """
     # Handle journal_df = None case - use column names as default grouping
     if journal_df is None:
-        # Create a simple journal_df from column names
-        journal_df = pd.DataFrame([analytes_df.columns.values, 
-                                  analytes_df.columns.values],
-                                 index=[sample_label, align_to])
+        # Create a journal with columns as the actual sample names
+        journal_df = pd.DataFrame(
+            index=[sample_label, align_to],
+            columns=analytes_df.columns
+        )
+        # Fill with sample names
+        journal_df.loc[sample_label] = analytes_df.columns
+        journal_df.loc[align_to] = analytes_df.columns
         add_labels = []  # No additional labels when using defaults
     
     # Align data with journal (more efficient indexing)
