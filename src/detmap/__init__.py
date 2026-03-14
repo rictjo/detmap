@@ -13,7 +13,7 @@ _MAP_REGISTRY = {
     'Drotmap': 'drotmap',
     'DROTMap': 'drotmap',
     'Dhiemap': 'dhiemap',
-    'Dhiemap': 'dhiemap',
+    'DhieMap': 'dhiemap',
     'DHIEMap': 'dhiemap',
 }
 
