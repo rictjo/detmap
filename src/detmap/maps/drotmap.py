@@ -438,7 +438,9 @@ class DetMap(BaseMap):
         
         # Convert to jax and use original function
         key = jax.random.PRNGKey(self.random_state if self.random_state else 0)
-        
+
+        self.reduced_dims = np.min([*X.shape,self.reduced_dims])
+       
         X_embedded = hilbert_ensemble_map(
             X=jnp.array(X),
             reduced_dims=self.reduced_dims,
