@@ -34,6 +34,4 @@ class BaseMap(ABC):
     def _check_array(self, X):
         """Validate input array."""
         X = np.asarray(X)
-        if X.ndim != 2:
-            raise ValueError("Expected 2D array")
         return X
