@@ -416,7 +416,7 @@ class DetMap(BaseMap):
     """
     
     def __init__(self, n_components=2, reduced_dims=64, bits=6, 
-                 window=32, ensemble_size=4, random_state=None):
+                 window=32, ensemble_size=6, random_state=None):
         super().__init__(n_components, random_state)
         self.reduced_dims = reduced_dims
         self.bits = bits
@@ -447,7 +447,10 @@ class DetMap(BaseMap):
             ensemble_size=self.ensemble_size,
             key=key
         )
+        jax.block_until_ready(X_embedded)
+       
         self.X_embedded = X_embedded
+       
         # Select requested components
         return np.asarray(X_embedded[:, :self.n_components])
 
