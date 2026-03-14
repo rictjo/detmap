@@ -243,7 +243,7 @@ import numpy as np
 class DMap(BaseMap):
    """Diffusion Map implementation."""
     
-    def __init__(self, n_components=2, reduced_dims=64, bits=8, 
+    def __init__(self, n_components=None, reduced_dims=64, bits=8, 
                  window=32, ensemble_size=4, random_state=None):
         super().__init__(n_components, random_state)
         self.reduced_dims = reduced_dims
@@ -268,6 +268,8 @@ class DMap(BaseMap):
         key = jax.random.PRNGKey(self.random_state if self.random_state else 0)
 
         self.reduced_dims = np.min([*X.shape,self.reduced_dims])
+        if self.n_components is None :
+            self.n_components = self.reduced_dims - 1
        
         X_embedded = hilbert_ensemble_map(
             X=jnp.array(X),
