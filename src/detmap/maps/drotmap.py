@@ -415,7 +415,7 @@ class DetMap(BaseMap):
     This is the main embedding algorithm for detmap.
     """
     
-    def __init__(self, n_components=2, reduced_dims=64, bits=6, 
+    def __init__(self, n_components=None, reduced_dims=64, bits=6, 
                  window=32, ensemble_size=6, random_state=None):
         super().__init__(n_components, random_state)
         self.reduced_dims = reduced_dims
@@ -439,7 +439,9 @@ class DetMap(BaseMap):
         # Convert to jax and use original function
         key = jax.random.PRNGKey(self.random_state if self.random_state else 0)
 
-        self.reduced_dims = np.min([*X.shape,self.reduced_dims])
+        self.reduced_dims = np.min([*X.shape,self.reduced_dims])       
+        if self.n_components is None :
+            self.n_components = self.reduced_dims - 1
        
         X_embedded = hilbert_ensemble_map(
             X=jnp.array(X),
