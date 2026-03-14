@@ -231,6 +231,122 @@ def rankdata_jax(a, method='average'):
     inv_sort_idx = jnp.argsort(sort_idx)
     return ranks[inv_sort_idx]
   
+# -------------------------------------------------------
+# RANDOMIZED SVD
+# -------------------------------------------------------
+
+def randomized_svd_chunked(X, rank, oversample=8, n_iter=2, key=jax.random.PRNGKey(0), chunk_size=10000):
+    N, D = X.shape
+    l = rank + oversample
+
+    Omega = jax.random.normal(key, (D, l), dtype=X.dtype)
+
+    def matmul_chunked(A, B):
+        out = []
+        for i in range(0, A.shape[0], chunk_size):
+            out.append(A[i:i+chunk_size] @ B)
+        return jnp.vstack(out)
+
+    Y = matmul_chunked(X, Omega)
+
+    for _ in range(n_iter):
+        Y = matmul_chunked(X, matmul_chunked(X.T, Y))
+
+    Q, _ = jnp.linalg.qr(Y)
+
+    B = Q.T @ X
+    U_hat, S, Vt = jnp.linalg.svd(B, full_matrices=False)
+
+    U = Q @ U_hat
+
+    return U[:, :rank], S[:rank], Vt[:rank, :]
+
+def svd_reduce(X, rank, key):
+    U, S, V = randomized_svd_chunked(X, rank, key=key)
+    return X @ V.T
+
+def randomized_pca_jax(X, n_components=3, n_oversamples=10, n_iter=2,
+                       random_key=jax.random.PRNGKey(42)):
+    """
+    Correct randomized PCA using randomized SVD.
+
+    Args:
+        X: array of shape (n_samples, n_features)
+        n_components: number of components to keep
+        n_oversamples: oversampling parameter (Halko et al. recommend 10)
+        n_iter: number of power iterations (1-2 usually sufficient)
+        random_key: JAX random key
+
+    Returns:
+        X_pca: projected data (n_samples, n_components)
+        components: principal components (n_components, n_features)
+        explained_variance: variance explained
+    """
+    # Center the data
+    X_centered = X - jnp.mean(X, axis=0)
+
+    n_samples, n_features = X_centered.shape
+    l = n_components + n_oversamples
+
+    # Generate random matrix
+    key, subkey = jax.random.split(random_key)
+    Omega = jax.random.normal(subkey, (n_features, l))
+
+    # Stage A: Find approximate range
+    Y = X_centered @ Omega
+
+    # Power iteration (improves accuracy)
+    for _ in range(n_iter):
+        Y = X_centered @ (X_centered.T @ Y)
+
+    # Orthonormalize
+    Q, _ = jnp.linalg.qr(Y)
+
+    # Stage B: Compute SVD on smaller matrix
+    B = Q.T @ X_centered
+    U_tilde, S, Vt = jnp.linalg.svd(B, full_matrices=False)
+
+    # Recover left singular vectors of X
+    U = Q @ U_tilde
+
+    # Project data
+    X_pca = X_centered @ Vt.T[:, :n_components]
+
+    # Explained variance
+    explained_variance = (S[:n_components]**2) / (n_samples - 1)
+
+    return X_pca, Vt[:n_components], explained_variance
+
+# Benchmark to verify correctness
+def verify_pca_correctness():
+    """Compare randomized PCA with full SVD PCA."""
+    try:
+        from sklearn.datasets import make_blobs
+        from sklearn.decomposition import PCA
+    except:
+        print('sklearn not present')
+        return False
+       
+    import numpy as np
+
+    # Generate test data
+    X, _ = make_blobs(n_samples=500, n_features=20, centers=3, random_state=42)
+    X_jax = jnp.array(X)
+
+    # Scikit-learn PCA (ground truth)
+    pca_sk = PCA(n_components=3)
+    X_pca_sk = pca_sk.fit_transform(X)
+
+    # Our randomized PCA
+    X_pca_jax, components_jax, ev_jax = randomized_pca_jax(X_jax, n_components=3)
+
+    # Compare projections (they should be similar up to sign)
+    correlation = np.corrcoef(X_pca_sk[:, 0], np.array(X_pca_jax[:, 0]))[0, 1]
+    print(f"Correlation with sklearn PCA (first component): {correlation:.6f}")
+    print(f"Should be very close to 1.0 (or -1.0 if sign flipped)")
+
+    return abs(correlation) > 0.99
+
 
 def local_pca_jax(df, ndims=None, random_key=jax.random.PRNGKey(42)):
     """
