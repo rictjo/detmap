@@ -237,11 +237,57 @@ def load_dataframe_test():
         return jnp.array(X)
 
 
+
+"""DMap implementation."""
+from ..base import BaseMap
+import numpy as np
+
+class DhieMap(BaseMap):
+   """Deterministic Hierarchical Map implementation."""
+    
+    def __init__(self, n_components=2, proj_dim=64, level=7, 
+                 window=32, ensemble_size=4, random_state=None):
+        super().__init__(n_components, random_state)
+        self.reduced_dims = reduced_dims
+        self.bits = bits
+        self.window = window
+        self.ensemble_size = ensemble_size
+        self.X_fit_ = None
+        
+    def fit(self, X, y=None):
+        """Just store the training data for reference."""
+        self.X_fit_ = self._check_array(X)
+        return self
+    
+    def transform(self, X):
+        """
+        Transform using the original function directly.
+        This version doesn't use stored mins/maxs, recalculates everything.
+        """
+        X = self._check_array(X)
+                
+        X_embedded = ensemble_embedding(
+            X=jnp.array(X),
+            proj_dim=self.reduced_dims,
+            levels=self.levels,
+            ensemble=self.ensemble_size,
+        )
+        jax.block_until_ready(X_embedded)
+       
+        self.X_embedded = X_embedded
+       
+        # Select requested components
+        return np.asarray(X_embedded[:, :self.n_components])
+
+    def get_embedding(self):
+        if self.X_embedded is not None :
+           return self.X_embedded 
+
 # --------------------------------------------------
 # Main test
 # --------------------------------------------------
 
-def main():
+def main_test():
 
     X = load_dataframe_test()
 
@@ -263,4 +309,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main_test()
