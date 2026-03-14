@@ -245,7 +245,7 @@ import numpy as np
 class DhieMap(BaseMap):
    """Deterministic Hierarchical Map implementation."""
     
-    def __init__(self, n_components=2, reduced_dims=64, hierarchy_depth=7, 
+    def __init__(self, n_components=None, reduced_dims=64, hierarchy_depth=7, 
                  window=32, ensemble_size=4, random_state=None):
         super().__init__(n_components, random_state)
         self.proj_dim = reduced_dims
@@ -266,7 +266,9 @@ class DhieMap(BaseMap):
         """
         X = self._check_array(X)
         self.proj_dim = np.min([*X.shape,self.proj_dim])
-       
+        if self.n_components is None :
+            self.n_components = self.proj_dim - 1
+
         X_embedded = ensemble_embedding(
             X=jnp.array(X),
             proj_dim=self.proj_dim,
