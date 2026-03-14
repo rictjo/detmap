@@ -6,10 +6,10 @@ A deterministic, SFC (space-filling curve)-based, multi-projection, multi-scale,
 
 ```
 # Simple imports - they work the same regardless of where classes live
-from detmap import DetMap, DMap, Dhiemap
+from detmap import DetMap, DMap, DhieMap
 
 # Create instances
-detmap = DetMap(n_components=3, ensemble_size=20)
+detmap = DetMap()
 dmap = DMap(n_components=2)
 dhiemap = Dhiemap(n_components=5, hierarchy_depth=4)
 
