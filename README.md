@@ -16,7 +16,7 @@ dhiemap = Dhiemap(n_components=5, hierarchy_depth=4)
 # Fit and transform
 X_embedded = detmap.fit_transform(X)
 
-# Automatic annotation (leave out metadata_df do align with column labels)
+# Automatic annotation (leave out metadata_df to align with column labels)
 from detmap import multivariate_aligned_pca
 scores, loadings = multivariate_aligned_pca(data_df, metadata_df)
 ```
