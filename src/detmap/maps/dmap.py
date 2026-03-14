@@ -238,21 +238,54 @@ def run_csv_test(filename=None):
 
 """DMap implementation."""
 from ..base import BaseMap
+import numpy as np
 
 class DMap(BaseMap):
-    """Diffusion Map implementation."""
+   """Diffusion Map implementation."""
     
-    def __init__(self, n_components=2, alpha=1.0, random_state=None):
+    def __init__(self, n_components=2, reduced_dims=64, bits=8, 
+                 window=32, ensemble_size=4, random_state=None):
         super().__init__(n_components, random_state)
-        self.alpha = alpha
+        self.reduced_dims = reduced_dims
+        self.bits = bits
+        self.window = window
+        self.ensemble_size = ensemble_size
+        self.X_fit_ = None
         
     def fit(self, X, y=None):
-        # Your DMap implementation
+        """Just store the training data for reference."""
+        self.X_fit_ = self._check_array(X)
         return self
     
     def transform(self, X):
-        # Transform implementation
-        pass
+        """
+        Transform using the original function directly.
+        This version doesn't use stored mins/maxs, recalculates everything.
+        """
+        X = self._check_array(X)
+        
+        # Convert to jax and use original function
+        key = jax.random.PRNGKey(self.random_state if self.random_state else 0)
+        
+        X_embedded = hilbert_ensemble_map(
+            X=jnp.array(X),
+            reduced_dims=self.reduced_dims,
+            hilbert_bits=self.bits,
+            window=self.window,
+            ensemble_size=self.ensemble_size,
+            key=key
+        )
+        jax.block_until_ready(X_embedded)
+       
+        self.X_embedded = X_embedded
+       
+        # Select requested components
+        return np.asarray(X_embedded[:, :self.n_components])
+
+    def get_embedding(self):
+        if self.X_embedded is not None :
+           return self.X_embedded 
+
 
 if __name__ == "__main__":
     run_test()
