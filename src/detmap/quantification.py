@@ -22,7 +22,7 @@ from .special import randomized_pca_jax , rankdata_jax , local_pca_jax
 def multivariate_aligned_pca_legacy ( analytes_df , journal_df ,
                 sample_label = 'Sample ID', align_to = 'Modulating group' , n_components=None ,
                 add_labels = ['Additional information'] , e2s=None , color_lookup=None , ispec=None ) :
-    
+
     # SAIGA PROJECTIONS RICHARD TJÖRNHAMMAR
     what                = align_to
     analytes_df         = analytes_df.loc[:,journal_df.columns.values]
@@ -47,14 +47,19 @@ def multivariate_aligned_pca_legacy ( analytes_df , journal_df ,
     projection_df       = ( projection_df.T / np.sqrt(np.sum(projection_df.values**2,1)) ).T
     projected_df        = pd.DataFrame( np.dot(projection_df,pcas_df.T), index=projection_df.index, columns=pcas_df.index )
     owners  = projected_df.index.values[projected_df.apply(np.abs).apply(np.argmax).values]
-    if ispec is None :
-        ispec = int( len(projection_df)>1 )
-    specificity = projected_df.apply(np.abs).apply(lambda x:compositional_analysis(x)[ispec] ).values
+
+    try :
+        if ispec is None :
+            ispec = int( len(projection_df)>1 )
+        specificity = projected_df.apply(np.abs).apply(lambda x:compositional_analysis(x)[ispec] ).values
+        pcas_df.loc[:,'Spec,' + {0:'beta',1:'tau',2:'gini',3:'geni'}[ ispec ] ] = specificity
+    except NameError:
+        # compositional_analysis not available
+        pass
 
     pcas_df .loc[:,'Owner'] = owners
     pcaw_df = pcaw_df.rename( columns={what:'Owner'} )
     pcas_df.loc[:,'Corr,r'] = corr_r
-    pcas_df.loc[:,'Spec,' + {0:'beta',1:'tau',2:'gini',3:'geni'}[ ispec ] ] = specificity
 
     if not color_lookup is None :
         pcas_df.loc[:, 'Color'] = [ color_lookup[o] for o in pcas_df.loc[:,'Owner'] ]
@@ -75,10 +80,10 @@ def multivariate_aligned_pca_legacy ( analytes_df , journal_df ,
 def multivariate_aligned_pca(analytes_df, journal_df=None,
                              sample_label='Sample ID', align_to='Modulating group',
                              n_components=None, add_labels=None,
-                             e2s=None, color_lookup=None, ispec=None):    
+                             e2s=None, color_lookup=None, ispec=None):
     """
     Perform multivariate aligned PCA with improved efficiency.
-    
+
     Parameters
     ----------
     analytes_df : pd.DataFrame
@@ -109,63 +114,70 @@ def multivariate_aligned_pca(analytes_df, journal_df=None,
             columns=analytes_df.columns
         )
         # Fill with sample names
+        journal_df.loc[sample_label] = analytes_df.columns.copy()
+        journal_df.loc[align_to] = analytes_df.columns.copy()
+        analytes_df.columns = ['cid'+str(i) for i in range(len(analytes_df.columns))]
+        journal_df.columns  = analytes_df.columns
         journal_df.loc[sample_label] = analytes_df.columns
-        journal_df.loc[align_to] = analytes_df.columns
         add_labels = []  # No additional labels when using defaults
-    
-    # Align data with journal (more efficient indexing)
-    common_cols = journal_df.columns.values
+
+    # Remove mem explision due to bad user input
+    analytes_df = analytes_df.loc[:, ~analytes_df.columns.duplicated(keep='first')]
+    journal_df  = journal_df.loc[:, ~journal_df.columns.duplicated(keep='first')]
+    common_cols = sorted( set(journal_df.columns.values.tolist()) & set(analytes_df.columns.values.tolist()) )
     analytes_df = analytes_df.loc[:, common_cols]
-    
+    journal_df  = journal_df.loc[:, common_cols]
+
     # Build dictionary for align_to mapping (vectorized)
-    align_dict = dict(zip(journal_df.loc[sample_label], 
+    align_dict = dict(zip(journal_df.loc[sample_label],
                          journal_df.loc[align_to]))
-    
+
     # Process additional labels (more efficient comprehension)
     sample_infos = []
     if add_labels:
-        sample_infos = [(label, dict(zip(journal_df.loc[sample_label], 
-                                        journal_df.loc[label]))) 
+        sample_infos = [(label, dict(zip(journal_df.loc[sample_label],
+                                        journal_df.loc[label])))
                        for label in add_labels if label in journal_df.index]
-    
+
     # Determine number of components
     n_components = n_components or min(analytes_df.shape)
-    
+
     # Perform local PCA (consider using randomized_pca_jax for speed)
-    scores, weights, nidx, ncol = local_pca_jax(analytes_df.copy(), 
+    scores, weights, nidx, ncol = local_pca_jax(analytes_df.copy(),
                                                 ndims=n_components)
-    
+
     # Create DataFrames (more efficient construction)
     pc_cols = [f'PCA {i+1}' for i in range(n_components)]
     pcas_df = pd.DataFrame(scores, columns=pc_cols, index=nidx)
     pcaw_df = pd.DataFrame(weights, columns=pc_cols, index=ncol)
-    
+
     # Calculate correlation ranks (vectorized)
     corr_r = rankdata_jax((pcas_df ** 2).sum(axis=1).values) / len(pcas_df.index)
-    
+
     # Add owner mapping (more efficient)
-    pcaw_df['Owner'] = [align_dict.get(s, s) for s in pcaw_df.index]
-    
+    pcaw_df['Owner'] = [align_dict[s] for s in pcaw_df.index]
+
     # Group-wise averaging (vectorized)
     projection_df = pcaw_df.groupby('Owner')[pc_cols].mean()
 
     # Normalize rows (vectorized)
-    projection_df = projection_df.div(np.sqrt((projection_df ** 2).sum(axis=1)), 
+    projection_df = projection_df.div(np.sqrt((projection_df ** 2).sum(axis=1)),
                                      axis=0)
-    
+
     # Project samples onto group loadings
     projected_df = pd.DataFrame(np.dot(projection_df.values, pcas_df[pc_cols].T),
                                index=projection_df.index,
                                columns=pcas_df.index)
-    
+
+    # owners  = projected_df.index.values[projected_df.apply(np.abs).apply(np.argmax).values]
     # Assign owners based on maximum absolute projection (vectorized)
     owners = projection_df.index[projected_df.abs().values.argmax(axis=0)]
     pcas_df['Owner'] = owners.values
-    
+
     # Add specificity (if function exists)
     if ispec is None:
         ispec = int(len(projection_df) > 1)
-    
+
     # Try to compute specificity, handle missing function gracefully
     try:
         specificity = projected_df.abs().apply(
@@ -176,23 +188,23 @@ def multivariate_aligned_pca(analytes_df, journal_df=None,
     except NameError:
         # compositional_analysis not available
         pass
-    
+
     pcas_df['Corr,r'] = corr_r
-    
+
     # Add colors if mapping provided
     if color_lookup:
         pcas_df['Color'] = pcas_df['Owner'].map(color_lookup)
         pcaw_df['Color'] = pcaw_df['Owner'].map(color_lookup)
-    
+
     # Add symbols if mapping provided
     if e2s:
         pcas_df['Symbol'] = pcas_df.index.to_series().map(
             lambda g: e2s.get(g, g) if g in e2s and 'nan' not in str(e2s[g]).lower() else g
         )
-    
+
     # Add additional sample information
     for label, sample_dict in sample_infos:
         if sample_dict:
             pcaw_df[label] = pcaw_df.index.map(sample_dict)
-    
+
     return pcas_df, pcaw_df

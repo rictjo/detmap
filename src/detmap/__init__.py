@@ -15,6 +15,7 @@ _MAP_REGISTRY = {
     'Dhiemap': 'dhiemap',
     'DhieMap': 'dhiemap',
     'DHIEMap': 'dhiemap',
+    "DetSFCMap": 'detsfcmap',
 }
 
 def __getattr__(name):
@@ -50,11 +51,13 @@ def __getattr__(name):
 __all__ = [
     "__version__",
     "DetMap",
+    "DetSFCMap"
     "DMap", 
     "Dhiemap",
     "multivariate_aligned_pca",
 ]
 
 # Optional: Explicitly expose commonly used functions
-from .quantification import multivariate_aligned_pca
+from .quantification import multivariate_aligned_pca,multivariate_aligned_pca_legacy
 from .special import randomized_pca_jax, rankdata_jax, local_pca_jax
+from .visual import plot_colored_points , get_label_colors , plot_colored_points_with_hover
