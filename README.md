@@ -5,18 +5,35 @@ A deterministic, SFC (space-filling curve)-based, multi-projection, multi-scale,
 ## Intended usage pattern
 
 ```
-# Simple imports - they work the same regardless of where classes live
-from detmap import DetMap, DMap, DhieMap
+import pandas as pd
+from detmap import DetMap,DetSFCMap,DhieMap,DMap
+import jax.numpy as jnp
 
-# Create instances
-detmap = DetMap()
-dmap = DMap(n_components=2)
-dhiemap = Dhiemap(n_components=5, hierarchy_depth=4)
+detmap = DetMap(reduced_dims=2)
 
-# Fit and transform
-X_embedded = detmap.fit_transform(X)
+if True :
+    analytes = pd.read_csv('../data/analytes.tsv',sep='\t',index_col=0 )
+    analytes .columns = [c.split('.')[0] for c in analytes.columns]
+    labels = None
+else :
+    # data https://zenodo.org/records/7246239/files/data.zip?download=1
+    analytes = pd.read_csv('../data/mnist_data.tsv',sep='\t',index_col=0 )
+    labels = [str(s) for s in pd.read_csv('../data/mnist_target.tsv',sep='\t',index_col=0 ).values.tolist()]
 
-# Automatic annotation (leave out metadata_df to align with column labels)
-from detmap import multivariate_aligned_pca
-scores, loadings = multivariate_aligned_pca(data_df, metadata_df)
+X_embedded = detmap.fit_transform(jnp.array(analytes.values))
+sdf = pd.DataFrame(X_embedded,index=analytes.index,columns=['comp'+str(i) for i in range(X_embedded.shape[1])])
+
+if labels is None :
+    from detmap import multivariate_aligned_pca
+    scores, loadings = multivariate_aligned_pca(analytes)
+    labels = scores['Owner'].values.tolist()
+
+from detmap.visual import plot_colored_points , plot_colored_points_with_hover
+
+plot_colored_points( x = sdf['comp0'].values ,
+                     y = sdf['comp1'].values ,
+                     labels = labels )
+
+import matplotlib.pyplot as plt
+plt.show()
 ```
