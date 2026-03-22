@@ -16,6 +16,11 @@ _MAP_REGISTRY = {
     'DhieMap': 'dhiemap',
     'DHIEMap': 'dhiemap',
     "DetSFCMap": 'detsfcmap',
+    "DetClustMap":'clustdetmap',
+    "OptimalHybridMap":'bitmap',
+    "NonlinearHybridMap":'bitmap',
+    "BitInterleavedClusterMap":'bitmap',
+    "EnhancedOptimalHybridMap":'bitmap',
 }
 
 def __getattr__(name):
@@ -54,10 +59,24 @@ __all__ = [
     "DetSFCMap"
     "DMap", 
     "Dhiemap",
+    "DetClustMap",
+    "DetSFCMap",
+    "OptimalHybridMap",
+    "BitInterleavedClusterMap",
+    "EnhancedOptimalHybridMap",
+    "UltimateHybridMap",
     "multivariate_aligned_pca",
+    "multivariate_aligned_pca_legacy",
+    "randomized_pca_jax",
+    "rankdata_jax",
+    "local_pca_jax",
+    "plot_colored_points",
+    "get_label_colors",
+    "plot_colored_points_with_hover"
 ]
 
 # Optional: Explicitly expose commonly used functions
 from .quantification import multivariate_aligned_pca,multivariate_aligned_pca_legacy
 from .special import randomized_pca_jax, rankdata_jax, local_pca_jax
 from .visual import plot_colored_points , get_label_colors , plot_colored_points_with_hover
+
